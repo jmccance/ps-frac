@@ -22,8 +22,7 @@ data Line = Line
   }
 
 endpoint :: forall r.
-  {
-    x :: Number
+  { x :: Number
   , y :: Number
   , angle :: Number
   , length :: Number
@@ -41,8 +40,7 @@ data FractalParameters = FractalParameters
   }
 
 createBranches :: FractalParameters -> Line -> Tuple Line Line
-createBranches (FractalParameters p) (Line line) =
-  Tuple left right
+createBranches (FractalParameters p) (Line line) = Tuple left right
   where
     Tuple x y = endpoint line
     left = Line
@@ -79,7 +77,8 @@ drawLine ctx (Line line) = do
     void $ C.lineTo ctx x' y'
     C.closePath ctx
 
-drawTree :: forall eff. Context2D -> Tree Line -> Eff (canvas :: CANVAS | eff) Unit
+drawTree :: forall eff.
+  Context2D -> Tree Line -> Eff (canvas :: CANVAS | eff) Unit
 drawTree ctx (Leaf line) = drawLine ctx line
 drawTree ctx (Node line left right) = do
   drawLine ctx line
