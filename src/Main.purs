@@ -15,4 +15,4 @@ main :: Eff (HA.HalogenEffects (canvas :: CANVAS)) Unit
 main = HA.runHalogenAff do
   body <- HA.awaitBody
   io <- runUI FractalViewer.component unit body
-  io.query $ H.action $ LeftAngleChanged 0.0 
+  io.query $ H.action $ Render
