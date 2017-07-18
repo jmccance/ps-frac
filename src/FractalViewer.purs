@@ -11,7 +11,6 @@ import Global (readFloat, readInt)
 import Graphics.Canvas (CANVAS)
 import Graphics.Canvas as C
 import Halogen as H
-import Halogen.HTML (a, div)
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
@@ -34,7 +33,9 @@ data Query a =
   | RightAngleChanged Number a
   | ShrinkFactorChanged Number a
 
-component :: forall eff. H.Component HH.HTML Query Input Void (Aff (canvas :: CANVAS | eff))
+data Message = ParametersUpdated
+
+component :: forall eff. H.Component HH.HTML Query Input Message (Aff (canvas :: CANVAS | eff))
 component =
   H.component
     { initialState: const initialState
@@ -57,13 +58,15 @@ component =
     HH.div
     [ HP.class_ HB.container ]
     [ HH.form_
-      [ HH.div
+      [ HH.h1_ [ HH.text "ps-frac" ]
+      , HH.div
         [ HP.class_ HB.formGroup ]
         [ HH.label
-          [ HP.for "left-angle" ]
+          [ HP.for "left-angle"
+          , HP.class_ HB.controlLabel ]
           [ HH.text $ "left branch angle = " <> (show state.leftAngle) ]
         , HH.input
-          [ HP.classes [ HB.formControl, (HH.ClassName "slider") ]
+          [ HP.class_ HB.formControl
           , HP.name "left-angle"
           , HP.type_ HP.InputRange
           , HP.value $ show state.leftAngle
@@ -76,10 +79,11 @@ component =
       , HH.div
         [ HP.class_ HB.formGroup ]
         [ HH.label
-          [ HP.for "right-angle" ]
+          [ HP.for "right-angle"
+          , HP.class_ HB.controlLabel ]
           [ HH.text $ "right branch angle = " <> (show state.rightAngle) ]
         , HH.input
-          [ HP.classes [ HB.formControl, (HH.ClassName "slider") ]
+          [ HP.class_ HB.formControl
           , HP.name "right-angle"
           , HP.type_ HP.InputRange
           , HP.value $ show state.rightAngle
@@ -95,7 +99,7 @@ component =
           [ HP.for "shrink-factor" ]
           [ HH.text $ "shrink factor = " <> (show state.shrinkFactor) ]
         , HH.input
-          [ HP.classes [ HB.formControl, (HH.ClassName "slider") ]
+          [ HP.class_ HB.formControl
           , HP.name "shrink-factor"
           , HP.type_ HP.InputRange
           , HP.value $ show state.shrinkFactor
@@ -122,45 +126,61 @@ component =
     , HH.canvas [ HP.id_ "fractal-canvas", HP.width 1024 , HP.height 1024 ]
     ]
   
-  eval :: Query ~> H.ComponentDSL State Query Void (Aff (canvas :: CANVAS | eff))
+  eval :: Query ~> H.ComponentDSL State Query Message (Aff (canvas :: CANVAS | eff))
   eval = case _ of
     Render next -> do
       state <- H.get
-      H.liftEff $ renderFractal state
+      H.liftEff $ drawFractal state
       pure next
 
     DepthChanged v next -> do
       H.modify (_ { depth = v })
-      state <- H.get
-      H.liftEff $ renderFractal state
+      H.raise ParametersUpdated
       pure next
 
     LeftAngleChanged v next -> do
       H.modify (_ { leftAngle = v })
-      state <- H.get
-      H.liftEff $ renderFractal state
+      H.raise ParametersUpdated
       pure next
 
     RightAngleChanged v next -> do
       H.modify (_ { rightAngle = v })
-      state <- H.get
-      H.liftEff $ renderFractal state
+      H.raise ParametersUpdated
       pure next
 
     ShrinkFactorChanged v next -> do
       H.modify (_ { shrinkFactor = v })
-      state <- H.get
-      H.liftEff $ renderFractal state
+      H.raise ParametersUpdated
       pure next
 
-renderFractal :: forall eff. State -> Eff (canvas :: CANVAS | eff) Unit
-renderFractal state = do
-  mcanvas <- C.getCanvasElementById "fractal-canvas"
-  let canvas = unsafePartial (fromJust mcanvas)
-  dims <- C.getCanvasDimensions canvas
-  ctx <- C.getContext2D canvas
-  _ <- C.clearRect ctx { x: 0.0, y: 0.0, w: dims.width, h: dims.height }
-  let params = FractalParameters { leftAngle: state.leftAngle, rightAngle: state.rightAngle, shrinkFactor: state.shrinkFactor }
-  let trunk = Line { x: 512.0, y: 512.0, angle: (pi / 2.0), length: 100.0, width: 4.0 }
-  let tree = createTree state.depth params trunk
-  drawTree ctx tree
+drawFractal :: forall eff. State -> Eff (canvas :: CANVAS | eff) Unit
+drawFractal state =
+  do
+    mcanvas     <- C.getCanvasElementById "fractal-canvas"
+    let canvas  = unsafePartial (fromJust mcanvas)
+    dims        <- C.getCanvasDimensions canvas
+    ctx         <- C.getContext2D canvas
+    _           <- C.clearRect
+                      ctx
+                      { x: 0.0, y: 0.0, w: dims.width, h: dims.height }
+    
+    let tree    = createTree state.depth params trunk
+
+    drawTree ctx tree
+
+  where
+
+  params = 
+    FractalParameters
+    { leftAngle: state.leftAngle
+    , rightAngle: state.rightAngle
+    , shrinkFactor: state.shrinkFactor
+    }
+
+  trunk =
+    Line 
+      { x: 512.0
+      , y: 512.0
+      , angle: (pi / 2.0)
+      , length: 100.0
+      , width: 4.0 }
