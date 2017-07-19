@@ -6,6 +6,7 @@
 /.psc*
 /.purs*
 /.psa*
+*.log
 
 # Ignore the built artifact.
 dist/index.js

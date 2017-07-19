@@ -7,7 +7,7 @@ import Control.Monad.Eff (Eff)
 import Data.Int (round)
 import Data.Maybe (Maybe(..), fromJust)
 import Fractal (FractalParameters(..), Line(..), createTree, drawTree)
-import Global (readFloat, readInt)
+import Global (readInt)
 import Graphics.Canvas (CANVAS)
 import Graphics.Canvas as C
 import Halogen as H
@@ -18,6 +18,8 @@ import Halogen.Themes.Bootstrap3 as HB
 import Math (pi)
 import Partial.Unsafe (unsafePartial)
 
+import Slider as Slider
+
 type Input = Unit
 type State =
   { leftAngle :: Number
@@ -26,11 +28,8 @@ type State =
   , depth :: Int
   }
 
--- | Query language for FractalViewer.
 data Query a =
-  -- | Re-draw the fractal.
     Render a
-  -- | The "depth" parameter has changed.
   | DepthChanged Int a
   | LeftAngleChanged Number a
   | RightAngleChanged Number a
@@ -38,10 +37,17 @@ data Query a =
 
 data Message = ParametersUpdated
 
+data Slot =
+    LeftAngleSlot
+  | RightAngleSlot
+  | ShrinkFactorSlot
+derive instance eqSliderSlot :: Eq Slot
+derive instance ordSliderSlot :: Ord Slot
+
 component :: forall eff.
   H.Component HH.HTML Query Input Message (Aff (canvas :: CANVAS | eff))
 component =
-  H.component
+  H.parentComponent
     { initialState: const initialState
     , render
     , eval
@@ -57,7 +63,9 @@ component =
       , depth: 10
       }
 
-    render :: State -> H.ComponentHTML Query
+    render ::
+      State
+      -> H.ParentHTML Query Slider.Query Slot (Aff (canvas :: CANVAS | eff))
     render state =
       HH.div
       [ HP.class_ HB.container ]
@@ -69,16 +77,17 @@ component =
             [ HP.for "left-angle"
             , HP.class_ HB.controlLabel ]
             [ HH.text $ "left branch angle = " <> (show state.leftAngle) ]
-          , HH.input
-            [ HP.class_ HB.formControl
-            , HP.name "left-angle"
-            , HP.type_ HP.InputRange
-            , HP.value $ show state.leftAngle
-            , HP.min (-2.0)
-            , HP.max 2.0
-            , HP.step (HP.Step 0.01)
-            , HE.onValueInput $ HE.input (readFloat >>> LeftAngleChanged)
-            ]
+          , HH.slot
+              LeftAngleSlot
+              (Slider.slider
+                { name: "left-angle"
+                , min: -2.0
+                , max: 2.0
+                , step: (HP.Step 0.01)
+                , value: state.leftAngle
+                })
+              unit
+              (HE.input LeftAngleChanged)
           ]
         , HH.div
           [ HP.class_ HB.formGroup ]
@@ -86,32 +95,34 @@ component =
             [ HP.for "right-angle"
             , HP.class_ HB.controlLabel ]
             [ HH.text $ "right branch angle = " <> (show state.rightAngle) ]
-          , HH.input
-            [ HP.class_ HB.formControl
-            , HP.name "right-angle"
-            , HP.type_ HP.InputRange
-            , HP.value $ show state.rightAngle
-            , HP.min (-2.0)
-            , HP.max 2.0
-            , HP.step (HP.Step 0.01)
-            , HE.onValueInput $ HE.input (readFloat >>> RightAngleChanged)
-            ]
+          , HH.slot
+              RightAngleSlot
+              (Slider.slider
+                { name: "right-angle"
+                , min: -2.0
+                , max: 2.0
+                , step: (HP.Step 0.01)
+                , value: state.rightAngle
+                })
+              unit
+              (HE.input RightAngleChanged)
           ]
         , HH.div
           [ HP.class_ HB.formGroup ]
           [ HH.label
             [ HP.for "shrink-factor" ]
             [ HH.text $ "shrink factor = " <> (show state.shrinkFactor) ]
-          , HH.input
-            [ HP.class_ HB.formControl
-            , HP.name "shrink-factor"
-            , HP.type_ HP.InputRange
-            , HP.value $ show state.shrinkFactor
-            , HP.min 0.0
-            , HP.max 1.0
-            , HP.step (HP.Step 0.01)
-            , HE.onValueInput $ HE.input (readFloat >>> ShrinkFactorChanged)
-            ]
+          , HH.slot
+              ShrinkFactorSlot
+              (Slider.slider
+                { name: "shrink-factor"
+                , min: 0.0
+                , max: 1.0
+                , step: (HP.Step 0.01)
+                , value: state.shrinkFactor
+                })
+              unit
+              (HE.input ShrinkFactorChanged)
           ]
         , HH.div
           [ HP.class_ HB.formGroup ]
@@ -131,7 +142,7 @@ component =
       ]
     
     eval ::
-      Query ~> H.ComponentDSL State Query Message (Aff (canvas :: CANVAS | eff))
+      Query ~> H.ParentDSL State Query Slider.Query Slot Message (Aff (canvas :: CANVAS | eff))
     eval = case _ of
       Render next -> do
         state <- H.get
@@ -161,11 +172,11 @@ component =
 drawFractal :: forall eff. State -> Eff (canvas :: CANVAS | eff) Unit
 drawFractal state =
   do
-    mcanvas     <- C.getCanvasElementById "fractal-canvas"
-    let canvas  = unsafePartial (fromJust mcanvas)
-    dims        <- C.getCanvasDimensions canvas
-    ctx         <- C.getContext2D canvas
-    _           <- C.clearRect
+    mcanvas     <-  C.getCanvasElementById "fractal-canvas"
+    let canvas  =   unsafePartial (fromJust mcanvas)
+    dims        <-  C.getCanvasDimensions canvas
+    ctx         <-  C.getContext2D canvas
+    _           <-  C.clearRect
                       ctx
                       { x: 0.0, y: 0.0, w: dims.width, h: dims.height }
     
