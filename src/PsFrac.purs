@@ -1,23 +1,21 @@
-module FractalViewer where
+module PsFrac where
   
 import Prelude
 
 import Control.Monad.Aff (Aff)
-import Control.Monad.Eff (Eff)
+import Data.Either.Nested (Either2)
+import Data.Functor.Coproduct.Nested (Coproduct2)
 import Data.Int (round)
-import Data.Maybe (Maybe(..), fromJust)
-import Fractal (FractalParameters(..), Line(..), createTree, drawTree)
+import Data.Maybe (Maybe(..))
+import FractalView as FractalView
 import Global (readInt)
 import Graphics.Canvas (CANVAS)
-import Graphics.Canvas as C
 import Halogen as H
+import Halogen.Component.ChildPath as CP
 import Halogen.HTML as HH
 import Halogen.HTML.Events as HE
 import Halogen.HTML.Properties as HP
 import Halogen.Themes.Bootstrap3 as HB
-import Math (pi)
-import Partial.Unsafe (unsafePartial)
-
 import Slider as Slider
 
 type Input = Unit
@@ -29,7 +27,7 @@ type State =
   }
 
 data Query a =
-    Render a
+    Initialize a
   | DepthChanged Int a
   | LeftAngleChanged Number a
   | RightAngleChanged Number a
@@ -37,20 +35,38 @@ data Query a =
 
 data Message = ParametersUpdated
 
-data Slot =
+data SliderSlot =
     LeftAngleSlot
   | RightAngleSlot
   | ShrinkFactorSlot
-derive instance eqSliderSlot :: Eq Slot
-derive instance ordSliderSlot :: Ord Slot
+
+derive instance eqSliderSlot :: Eq SliderSlot
+derive instance ordSliderSlot :: Ord SliderSlot
+
+data ViewSlot = FractalViewSlot
+
+derive instance eqViewSlot :: Eq ViewSlot
+derive instance ordViewSlot :: Ord ViewSlot
+
+type Slot = Either2 SliderSlot ViewSlot
+
+type ChildQuery = Coproduct2 Slider.Query FractalView.Query
+
+sliderSlot :: CP.ChildPath Slider.Query ChildQuery SliderSlot Slot
+sliderSlot = CP.cp1
+
+viewSlot :: CP.ChildPath FractalView.Query ChildQuery ViewSlot Slot
+viewSlot = CP.cp2
 
 component :: forall eff.
   H.Component HH.HTML Query Input Message (Aff (canvas :: CANVAS | eff))
 component =
-  H.parentComponent
+  H.lifecycleParentComponent
     { initialState: const initialState
     , render
     , eval
+    , initializer: Just (H.action Initialize)
+    , finalizer: Nothing
     , receiver: const Nothing
     }
   
@@ -62,10 +78,10 @@ component =
       , shrinkFactor: 0.8
       , depth: 10
       }
-
+  
     render ::
       State
-      -> H.ParentHTML Query Slider.Query Slot (Aff (canvas :: CANVAS | eff))
+      -> H.ParentHTML Query ChildQuery Slot (Aff (canvas :: CANVAS | eff))
     render state =
       HH.div
       [ HP.class_ HB.container ]
@@ -77,8 +93,8 @@ component =
             [ HP.for "left-angle"
             , HP.class_ HB.controlLabel ]
             [ HH.text $ "left branch angle = " <> (show state.leftAngle) ]
-          , HH.slot
-              LeftAngleSlot
+          , HH.slot'
+              sliderSlot LeftAngleSlot
               (Slider.slider
                 { name: "left-angle"
                 , min: -2.0
@@ -95,8 +111,8 @@ component =
             [ HP.for "right-angle"
             , HP.class_ HB.controlLabel ]
             [ HH.text $ "right branch angle = " <> (show state.rightAngle) ]
-          , HH.slot
-              RightAngleSlot
+          , HH.slot'
+              sliderSlot RightAngleSlot
               (Slider.slider
                 { name: "right-angle"
                 , min: -2.0
@@ -112,8 +128,8 @@ component =
           [ HH.label
             [ HP.for "shrink-factor" ]
             [ HH.text $ "shrink factor = " <> (show state.shrinkFactor) ]
-          , HH.slot
-              ShrinkFactorSlot
+          , HH.slot'
+              sliderSlot ShrinkFactorSlot
               (Slider.slider
                 { name: "shrink-factor"
                 , min: 0.0
@@ -138,63 +154,43 @@ component =
             ]
           ]
         ]
-      , HH.canvas [ HP.id_ "fractal-canvas", HP.width 1024 , HP.height 1024 ]
+      , HH.slot'
+          viewSlot FractalViewSlot
+          FractalView.component
+          state
+          absurd
       ]
     
     eval ::
-      Query ~> H.ParentDSL State Query Slider.Query Slot Message (Aff (canvas :: CANVAS | eff))
+      Query 
+      ~> H.ParentDSL 
+         State
+         Query
+         ChildQuery
+         Slot
+         Message
+         (Aff (canvas :: CANVAS | eff))
     eval = case _ of
-      Render next -> do
-        state <- H.get
-        H.liftEff $ drawFractal state
+      Initialize next -> do
+        -- Hacky nonsense to force the children to use their input on start.
+        -- get/put alone won't do it, but apparently modify will even if we
+        -- don't actually change anything.
+        s <- H.get
+        H.modify $ _ { shrinkFactor = s.shrinkFactor }
         pure next
 
       DepthChanged v next -> do
         H.modify (_ { depth = v })
-        H.raise ParametersUpdated
         pure next
 
       LeftAngleChanged v next -> do
         H.modify (_ { leftAngle = v })
-        H.raise ParametersUpdated
         pure next
 
       RightAngleChanged v next -> do
         H.modify (_ { rightAngle = v })
-        H.raise ParametersUpdated
         pure next
 
       ShrinkFactorChanged v next -> do
         H.modify (_ { shrinkFactor = v })
-        H.raise ParametersUpdated
         pure next
-
-drawFractal :: forall eff. State -> Eff (canvas :: CANVAS | eff) Unit
-drawFractal state =
-  do
-    mcanvas     <-  C.getCanvasElementById "fractal-canvas"
-    let canvas  =   unsafePartial (fromJust mcanvas)
-    dims        <-  C.getCanvasDimensions canvas
-    ctx         <-  C.getContext2D canvas
-    _           <-  C.clearRect
-                      ctx
-                      { x: 0.0, y: 0.0, w: dims.width, h: dims.height }
-    
-    let tree    = createTree state.depth params trunk
-
-    drawTree ctx tree
-  where
-    params = 
-      FractalParameters
-      { leftAngle: state.leftAngle
-      , rightAngle: state.rightAngle
-      , shrinkFactor: state.shrinkFactor
-      }
-
-    trunk =
-      Line 
-        { x: 512.0
-        , y: 512.0
-        , angle: (pi / 2.0)
-        , length: 100.0
-        , width: 4.0 }
